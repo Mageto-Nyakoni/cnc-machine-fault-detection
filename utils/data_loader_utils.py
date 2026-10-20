@@ -126,6 +126,7 @@ def datafile_read(file: os.PathLike, plotting=True):
 
 def format_file(file: os.PathLike):
     """Converts h5 file data into a pandas df, adding additional class and metadata columns
+    df = [X, Y, Z, timestamp, label, machine, process, i, window]
     
     Keyword Arguments:
         file {str} -- [path of the file] 
