@@ -24,6 +24,7 @@ import h5py
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from scipy import stats, signal
 from typing import Literal
 from pathlib import Path
 
@@ -154,7 +155,86 @@ def format_file(file: os.PathLike):
         df["window"] = pd.to_numeric(df["window"], downcast="integer")
         
     return df
+
+def time_features(x):
+    x = np.asarray(x, dtype=float)
+    x_centered = x - x.mean()
+    rms = np.sqrt(np.mean(x**2))
+    peak = np.max(np.abs(x))
+    return {
+        "mean": x.mean(),
+        "std": x.std(ddof=1),
+        "min": x.min(),
+        "max": x.max(),
+        "ptp": np.ptp(x),
+        "rms": rms,
+        "abs_mean": np.mean(np.abs(x)),
+        "skew": stats.skew(x),
+        "kurtosis": stats.kurtosis(x),
+        "crest_factor": peak / rms if rms > 0 else 0,
+        "shape_factor": rms / np.mean(np.abs(x)) if np.mean(np.abs(x)) > 0 else 0,
+        "impulse_factor": peak / np.mean(np.abs(x)) if np.mean(np.abs(x)) > 0 else 0,
+        "zero_crossing_rate": np.mean(np.diff(np.sign(x_centered)) != 0),
+    }
+     
+def freq_features(x, fs=2000, nperseg=1024):
+    x = np.asarray(x, dtype=float)
+    x = x - x.mean()
+
+    f, psd = signal.welch(x, fs=fs, nperseg=nperseg, window="hann")
+    psd_sum = psd.sum()
+    p = psd / psd_sum if psd_sum > 0 else np.ones_like(psd) / len(psd)
+
+    centroid = np.sum(f * p)
+    spread = np.sqrt(np.sum(((f - centroid) ** 2) * p))
+    cumulative = np.cumsum(p)
+
+    feats = {
+        "dominant_freq": f[np.argmax(psd)],
+        "peak_psd": psd.max(),
+        "total_power": psd_sum * (f[1] - f[0]),
+        "spectral_centroid": centroid,
+        "spectral_spread": spread,
+        "spectral_skew": np.sum(((f - centroid) ** 3) * p) / (spread**3 + 1e-12),
+        "spectral_kurtosis": np.sum(((f - centroid) ** 4) * p) / (spread**4 + 1e-12),
+        "spectral_entropy": -np.sum(p * np.log2(p + 1e-12)),
+        "spectral_rolloff_85": f[np.searchsorted(cumulative, 0.85)],
+    }
+
+    bands = {"low": (0, fs/20), "mid": (fs/20, fs/8), "high": (fs/8, fs/2)}
+    for name, (lo, hi) in bands.items():
+        mask = (f >= lo) & (f < hi)
+        feats[f"band_power_{name}"] = np.trapezoid(psd[mask], f[mask]) if mask.any() else 0.0
+
+    return feats
         
+def extract_window_features(window, fs=2000):
+    """ Generates a vector with the sample set variables for X, Y and Z given a 4,000 record window of vibration data.
+
+    Args:
+        window (np.array): 4,000 record window array of vibration data.
+        fs (int, optional): Sample rate of the data in Hz. Defaults to 2000.
+
+    Returns:
+        feats (pd.DataFrame): Dataframe including all the feature set variables for X, Y and Z.
+    """
+    feats = {}
+    axes = {"x": window[:, 0], "y": window[:, 1], "z": window[:, 2]}
+
+    for name, sig in axes.items():
+        for k, v in time_features(sig).items():
+            feats[f"{name}_{k}"] = v
+        for k, v in freq_features(sig, fs).items():
+            feats[f"{name}_{k}"] = v
+
+    # Combined magnitude of the 3 axes (orientation-independent)
+    mag = np.sqrt((window ** 2).sum(axis=1))
+    for k, v in time_features(mag).items():
+        feats[f"mag_{k}"] = v
+    for k, v in freq_features(mag, fs).items():
+        feats[f"mag_{k}"] = v
+
+    return feats
 
 
 if __name__ == "__main__":
