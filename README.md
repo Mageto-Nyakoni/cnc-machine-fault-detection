@@ -44,3 +44,22 @@ Anomaly Detection:
 
 ## Project Status
 Initial setup and exploratory data analysis.
+
+## Run the classification baseline
+
+1. Install dependencies with `python -m pip install -r requirements.txt`.
+2. Open `classification.ipynb` with the repository root as the working directory.
+3. Run all cells in order.
+
+The notebook checks one window, then extracts 15 vibration features from each
+complete 4,000-sample window in healthy recordings. It reports skipped incomplete
+windows and class coverage before fitting separate Random Forest classifiers for
+machine and operation identification. It prints accuracy, precision, recall, and
+F1 scores for each target.
+
+The split holds out 20% of recordings. Every window from a recording stays in
+the same split, and only vibration features enter the models. These are window
+classification results on unseen healthy recordings, not fault-detection results
+or a test of performance on future timeframes. Notebook outputs are cleared in Git.
+
+Run feature checks with `python -m unittest discover -s tests -v`.

@@ -157,6 +157,40 @@ def format_file(file: os.PathLike):
         
 
 
+def extract_window_features(window):
+    """Convert an array of X, Y, Z readings into 15 features."""
+    values = np.asarray(window, dtype=np.float64)
+
+    if values.ndim != 2 or values.shape[1] != 3 or len(values) == 0:
+        raise ValueError("Expected a nonempty array with X, Y, Z columns.")
+
+    if not np.isfinite(values).all():
+        raise ValueError("Window contains missing or infinite values.")
+
+    features = {}
+
+    for column, axis in enumerate(("X", "Y", "Z")):
+        signal = values[:, column]
+        mean = float(np.mean(signal))
+        std = float(np.std(signal, ddof=0))
+
+        # Excess kurtosis. Use 0 for a constant axis, where it is undefined.
+        excess_kurtosis = (
+            float(np.mean(((signal - mean) / std) ** 4) - 3)
+            if std > 0 else 0.0
+        )
+
+        features.update({
+            f"{axis}_mean": mean,
+            f"{axis}_std": std,
+            f"{axis}_rms": float(np.sqrt(np.mean(signal ** 2))),
+            f"{axis}_peak_to_peak": float(np.ptp(signal)),
+            f"{axis}_kurtosis": excess_kurtosis,
+        })
+
+    return features
+
+
 if __name__ == "__main__":
     data_path = Path("./EECE5644_Project/data").absolute()
     file_list = find_all_h5s_in_dir(data_path)
