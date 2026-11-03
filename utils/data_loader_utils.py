@@ -233,7 +233,7 @@ def extract_window_features(window, filename, fs=2000):
         feats[f"mag_{k}"] = v
     for k, v in freq_features(mag, fs).items():
         feats[f"mag_{k}"] = v
-
+    
     feats["filename"] = filename
 
     return feats
