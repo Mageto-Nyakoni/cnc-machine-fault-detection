@@ -208,7 +208,7 @@ def freq_features(x, fs=2000, nperseg=1024):
 
     return feats
         
-def extract_window_features(window, fs=2000):
+def extract_window_features(window, filename, fs=2000):
     """ Generates a vector with the sample set variables for X, Y and Z given a 4,000 record window of vibration data.
 
     Args:
@@ -233,6 +233,8 @@ def extract_window_features(window, fs=2000):
         feats[f"mag_{k}"] = v
     for k, v in freq_features(mag, fs).items():
         feats[f"mag_{k}"] = v
+
+    feats["filename"] = filename
 
     return feats
 
