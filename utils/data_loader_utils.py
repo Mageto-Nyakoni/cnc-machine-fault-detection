@@ -24,6 +24,7 @@ import h5py
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from scipy import stats, signal
 from typing import Literal
 from pathlib import Path
 
@@ -157,8 +158,70 @@ def format_file(file: os.PathLike):
         
 
 
-def extract_window_features(window):
-    """Convert an array of X, Y, Z readings into 15 features."""
+def time_features(samples):
+    """Compute main's 13 time-domain features for one signal."""
+    samples = np.asarray(samples, dtype=float)
+    centered = samples - samples.mean()
+    rms = np.sqrt(np.mean(samples ** 2))
+    peak = np.max(np.abs(samples))
+    abs_mean = np.mean(np.abs(samples))
+    varying = np.ptp(samples) > 0
+    return {
+        "mean": samples.mean(),
+        "std": samples.std(ddof=1) if len(samples) > 1 else 0.0,
+        "min": samples.min(),
+        "max": samples.max(),
+        "ptp": np.ptp(samples),
+        "rms": rms,
+        "abs_mean": abs_mean,
+        "skew": stats.skew(samples) if varying else 0.0,
+        "kurtosis": stats.kurtosis(samples) if varying else 0.0,
+        "crest_factor": peak / rms if rms > 0 else 0.0,
+        "shape_factor": rms / abs_mean if abs_mean > 0 else 0.0,
+        "impulse_factor": peak / abs_mean if abs_mean > 0 else 0.0,
+        "zero_crossing_rate": (
+            np.mean(np.diff(np.sign(centered)) != 0) if len(samples) > 1 else 0.0
+        ),
+    }
+
+
+def freq_features(samples, fs=2000, nperseg=1024):
+    """Compute main's 12 Welch-spectrum features for one signal."""
+    samples = np.asarray(samples, dtype=float)
+    samples = samples - samples.mean()
+    frequencies, psd = signal.welch(
+        samples, fs=fs, nperseg=min(nperseg, len(samples)), window="hann"
+    )
+    psd_sum = psd.sum()
+    probabilities = psd / psd_sum if psd_sum > 0 else np.ones_like(psd) / len(psd)
+    centroid = np.sum(frequencies * probabilities)
+    spread = np.sqrt(np.sum((frequencies - centroid) ** 2 * probabilities))
+    cumulative = np.cumsum(probabilities)
+    frequency_step = frequencies[1] - frequencies[0] if len(frequencies) > 1 else fs
+    features = {
+        "dominant_freq": frequencies[np.argmax(psd)],
+        "peak_psd": psd.max(),
+        "total_power": psd_sum * frequency_step,
+        "spectral_centroid": centroid,
+        "spectral_spread": spread,
+        "spectral_skew": np.sum((frequencies - centroid) ** 3 * probabilities)
+        / (spread ** 3 + 1e-12),
+        "spectral_kurtosis": np.sum((frequencies - centroid) ** 4 * probabilities)
+        / (spread ** 4 + 1e-12),
+        "spectral_entropy": -np.sum(probabilities * np.log2(probabilities + 1e-12)),
+        "spectral_rolloff_85": frequencies[np.searchsorted(cumulative, 0.85)],
+    }
+    bands = {"low": (0, fs / 20), "mid": (fs / 20, fs / 8), "high": (fs / 8, fs / 2)}
+    for name, (lower, upper) in bands.items():
+        mask = (frequencies >= lower) & (frequencies < upper)
+        features[f"band_power_{name}"] = (
+            np.trapezoid(psd[mask], frequencies[mask]) if mask.any() else 0.0
+        )
+    return features
+
+
+def extract_window_features(window, fs=2000):
+    """Return 100 time/frequency features for X, Y, Z and their magnitude."""
     values = np.asarray(window, dtype=np.float64)
 
     if values.ndim != 2 or values.shape[1] != 3 or len(values) == 0:
@@ -167,27 +230,17 @@ def extract_window_features(window):
     if not np.isfinite(values).all():
         raise ValueError("Window contains missing or infinite values.")
 
+    if not np.isfinite(fs) or fs <= 0:
+        raise ValueError("Sample rate must be finite and positive.")
+
     features = {}
-
-    for column, axis in enumerate(("X", "Y", "Z")):
-        signal = values[:, column]
-        mean = float(np.mean(signal))
-        std = float(np.std(signal, ddof=0))
-
-        # Excess kurtosis. Use 0 for a constant axis, where it is undefined.
-        excess_kurtosis = (
-            float(np.mean(((signal - mean) / std) ** 4) - 3)
-            if std > 0 else 0.0
-        )
-
-        features.update({
-            f"{axis}_mean": mean,
-            f"{axis}_std": std,
-            f"{axis}_rms": float(np.sqrt(np.mean(signal ** 2))),
-            f"{axis}_peak_to_peak": float(np.ptp(signal)),
-            f"{axis}_kurtosis": excess_kurtosis,
-        })
-
+    axes = {axis: values[:, column] for column, axis in enumerate(("x", "y", "z"))}
+    axes["mag"] = np.sqrt((values ** 2).sum(axis=1))
+    for axis, samples in axes.items():
+        for name, value in time_features(samples).items():
+            features[f"{axis}_{name}"] = value
+        for name, value in freq_features(samples, fs).items():
+            features[f"{axis}_{name}"] = value
     return features
 
 
