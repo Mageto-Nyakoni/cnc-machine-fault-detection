@@ -51,15 +51,19 @@ Initial setup and exploratory data analysis.
 2. Open `classification.ipynb` with the repository root as the working directory.
 3. Run all cells in order.
 
-The notebook checks one window, then extracts 15 vibration features from each
-complete 4,000-sample window in healthy recordings. It reports skipped incomplete
-windows and class coverage before fitting separate Random Forest classifiers for
-machine and operation identification. It prints accuracy, precision, recall, and
-F1 scores for each target.
+The notebook extracts 100 time- and frequency-domain features from X, Y, Z and
+their combined magnitude for each complete 4,000-sample window in healthy
+recordings. This matches the window size, 2 kHz sampling rate, and feature set
+used in the anomaly detection branch.
+
+The machine and operation Random Forests start with the anomaly branch's
+highest-PR-AUC Isolation Forest settings: 300 trees, up to 1,024 training
+windows per tree, a feature fraction of 0.7, and seed 42. The classifiers use
+bootstrap sampling and apply the feature fraction at each split. The notebook
+reports accuracy, precision, recall, and F1 for each target.
 
 The split holds out 20% of recordings. Every window from a recording stays in
-the same split, and only vibration features enter the models. These are window
-classification results on unseen healthy recordings, not fault-detection results
-or a test of performance on future timeframes. Notebook outputs are cleared in Git.
+the same split, and only vibration features enter the models. The scores apply
+to windows from held-out healthy recordings. Notebook outputs are cleared in Git.
 
 Run feature checks with `python -m unittest discover -s tests -v`.
